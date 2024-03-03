@@ -3,125 +3,147 @@
 pragma solidity >=0.7.0 <0.9.0;
 
 contract EasyTender {
-    enum TenderState { New, Played, Executed }
-    enum ContractState { Aggreed, Executed, Cancelled }
     enum OfferState { New, Rejected, Accepted }
 
-    mapping(bytes32 => Tender) tenders;
-    mapping(bytes32 => Offer) offers;
-    mapping(bytes32 => TenderContract) contracts;
-    mapping(bytes32 => Vote) tenderVotes;
+    mapping(bytes32 => Offer) offerById;
+    mapping(address => mapping(bytes32=>Vote)) voteByOfferIdBySender;
 
-    uint256 voteReward = 10;
+    uint voteReward = 1;
 
-    event NewTenderEvent (
-        bytes32 id,
-        address sender,
-        bytes32 ipfsHash
+    event TenderCancelledEvent ();
+
+    event TenderPlayedEvent (
+        address owner,
+        bytes ipfsHash,
+        Offer winner
     );
 
-    event NewOfferEvent (
+    event OfferEvent (
         bytes32 id,
-        bytes32 tenderId,
-        address sender,
-        bytes32 ipfsHash
+        OfferState state
     );
 
-    event NewVoteEvent (
-        bytes32 id,
-        bytes32 tenderId,
+    event VoteEvent (
         bytes32 offerId,
-        address sender
+        bool decision
     );
-
-    struct Tender {
-        bytes32 id;
-        address sender;
-        bytes32 ipfsHash;
-        TenderState state;
-    }
 
     struct Offer {
         bytes32 id;
         address sender;
-        string ipfsHash;
+        bytes ipfsHash;
         uint256 price;
-        OfferState state;
+        uint256 weight;
+        uint16 acceptCount;
+        uint16 rejectCount;
     }
 
     struct Vote {
-        address sender;
-        bool desicion;
+        bool voted;
+        bool decision;
     }
 
-    struct TenderContract {
-        bytes32 tenderId;
-        uint256 offerIndex;
-        ContractState state;
+    address public tenderOwner;
+    uint public biddingEnd;
+    bytes public tenderIpfsHash;
+    bytes32[] offers;
+
+    Offer winner;
+    bool played = false;
+
+    constructor(
+        uint biddingTime,
+        bytes memory ipfsHash
+    ) {
+        biddingEnd = block.timestamp + biddingTime;
+        tenderOwner = msg.sender;
+        tenderIpfsHash = ipfsHash;
     }
 
-    function getTender(bytes32 tenderId) public view returns (Tender memory tender) {
-        return tenders[tenderId];
+    function play() external {
+        require(msg.sender == tenderOwner, "Only owner could play tender");
+        require(!played, "Already played");
+        require(block.timestamp >= biddingEnd, "Bidding is still open");
+
+        if (offers.length == 0) {
+            emit TenderCancelledEvent();
+            return;
+        } 
+
+        bytes32 bestOfferId;
+        uint256 bestWeight = type(uint256).max;
+
+        for (uint8 i = 0; i < offers.length; i++) {
+            bytes32 offerId = offers[i];
+            uint256 weight = offerById[offerId].weight;
+            if (weight < bestWeight) {
+                bestWeight = weight;
+                bestOfferId = offerId;
+            }
+        }
+
+        winner = offerById[bestOfferId];
+
+        for (uint8 i = 0; i < offers.length; i++) {
+            bytes32 offerId = offers[i];
+            if (offerId != bestOfferId) {
+                emit OfferEvent(offerId, OfferState.Rejected);
+            } 
+        }
+
+        emit OfferEvent(bestOfferId, OfferState.Accepted);
+
+        emit TenderPlayedEvent(tenderOwner, tenderIpfsHash, winner);
+
+        played = true;
     }
 
-    // Owner flow - starting and accepting tender, pays for contract execution
-    function newTender(bytes32 ipfsHash) public returns (bytes32 tenderId) {
-        tenderId = keccak256(abi.encode(msg.sender, ipfsHash));
-       
-        Tender storage tender = tenders[tenderId];
-        tender.sender = msg.sender;
-        tender.ipfsHash = ipfsHash;
-        tender.state = TenderState.New;
-
-        emit NewTenderEvent(tenderId, msg.sender, ipfsHash);
+    function getWinnerPrice() external view returns (uint256 winnerPrice) {
+        require(block.timestamp >= biddingEnd, "Bidding is still open");
+        return winner.price;
     }
 
-    //function aceptOffer(bytes32 tenderId, uint256 offerIndex) public returns (bytes32 contractId) {
-    //    Tender storage tender = tenders[tenderId];
-    //    tender.offers[offerIndex].state = OfferState.Accepted;
-    //    tender.state = TenderState.Played;
-    //    contractId = keccak256(abi.encode(msg.sender, tenderId, offerIndex));
-    //    TenderContract storage tenderContract = contracts[contractId];
-    //    tenderContract.tenderId = tenderId;
-    //    tenderContract.offerIndex = offerIndex;
-    //    tenderContract.state = ContractState.Aggreed;
-    //}
+    // Participant flow - offering and executing contract
+    function makeOffer(bytes memory offerIpfsHash, uint256 price) external payable {
+        require(block.timestamp < biddingEnd, "Bidding already closed");
 
-    //function rejectOffer(bytes32 tenderId, uint256 offerIndex) public {
-    //    Tender storage tender = tenders[tenderId];
-    //    tender.offers[offerIndex].state = OfferState.Rejected;
-    //}
+        bytes32 offerId = keccak256(abi.encode(msg.sender, offerIpfsHash));
+        Offer storage offer = offerById[offerId];
+        offer.id = offerId;
+        offer.sender = msg.sender; 
+        offer.ipfsHash = offerIpfsHash;
+        offer.price = price;
+        offer.weight = price;
+        offer.acceptCount = 0;
+        offer.rejectCount = 0;
 
-    // // Participant flow - offering and executing contract
-    //function sendOffer(bytes32 tenderId, string memory docKey, uint256 price) public {
-    //    Tender storage tender = tenders[tenderId];
-    //    tender.offers[tender.offerSize++] = Offer(msg.sender, docKey, price, OfferState.New);
-    //}
+        offers.push(offerId);
 
-    //function executeContract(bytes32 contractId) public {
-    //    TenderContract storage tenderContract = contracts[contractId];
-    //    tenderContract.state = ContractState.Executed;
-    //    Tender storage tender = tenders[tenderContract.tenderId];
-    //    tender.state = TenderState.Executed;
-    //    Offer memory offer = tender.offers[tenderContract.offerIndex];
-    //    address payable beneficiary = payable(offer.sender);
-    //    beneficiary.transfer(offer.price);
-    //}
+        emit OfferEvent(offerId, OfferState.New);
+    }
 
-    // Researchers flow - voting for reward
-    //function voteTender(bytes32 tenderId, bool decision) public {
-    //    Tender storage tender = tenders[tenderId];
-    //    tender.votes[tender.voteSize++] = Vote(msg.sender, decision);
+    // Researchers flow - reserching offer and voting for reward
+    function voteOffer(bytes32 offerId, bool decision) external {
+        Vote storage vote = voteByOfferIdBySender[msg.sender][offerId];
+        require(!vote.voted, "Voter already voted");
+        require(block.timestamp < biddingEnd, "Voting already closed");
+        
+        vote.voted = true;
+        vote.decision = decision;
 
-    //    payable(msg.sender).transfer(voteReward);
-    //}
+        Offer storage offer = offerById[offerId];
 
-    //function voteOffer(bytes32 offerId, bool decision) public {
-    //    Tender storage tender = tenders[offerId];
-    //    tender.votes[tender.voteSize++] = Vote(msg.sender, decision);
+        if (decision) {
+            offer.acceptCount = offer.acceptCount + 1;
+            offer.weight = (offer.weight * 101)/100;
+        } else {
+            offer.rejectCount = offer.rejectCount + 1;
+            offer.weight = (offer.weight * 985)/1000;
+        }
 
-    //    payable(msg.sender).transfer(voteReward);
-    //}
-    // fun vote(ParticipantVote) return Reward
-    // fun vote(OwnerVote) return Reward
+        address payable beneficiary = payable(msg.sender);
+        beneficiary.transfer(voteReward);
+
+        emit VoteEvent(offerId, decision);
+    }
 }
