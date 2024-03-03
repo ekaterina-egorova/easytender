@@ -2,6 +2,8 @@
 
 pragma solidity >=0.7.0 <0.9.0;
 
+import "hardhat/console.sol";
+
 contract EasyTender {
     enum OfferState { New, Rejected, Accepted }
 
@@ -54,21 +56,30 @@ contract EasyTender {
     constructor(
         uint biddingTime,
         bytes memory ipfsHash
-    ) {
+    ) payable {
         biddingEnd = block.timestamp + biddingTime;
         tenderOwner = msg.sender;
         tenderIpfsHash = ipfsHash;
+        console.log("EasyTender Contract created: owner=%s, biddingEnd=%s", tenderOwner, biddingEnd);
     }
 
     function play() external {
+        console.log("Going to play");
+
         require(msg.sender == tenderOwner, "Only owner could play tender");
+        console.log("Owner checked");
         require(!played, "Already played");
+        console.log("Played flag checked");
         require(block.timestamp >= biddingEnd, "Bidding is still open");
+        console.log("Time checked");
 
         if (offers.length == 0) {
+            played = true;
             emit TenderCancelledEvent();
             return;
         } 
+
+        console.log("There are offers to play");
 
         bytes32 bestOfferId;
         uint256 bestWeight = type(uint256).max;
@@ -76,10 +87,16 @@ contract EasyTender {
         for (uint8 i = 0; i < offers.length; i++) {
             bytes32 offerId = offers[i];
             uint256 weight = offerById[offerId].weight;
+
+            console.log("Checking offer: price=%s, weight=%s", 
+                offerById[offerId].price, 
+                offerById[offerId].weight);
+
             if (weight < bestWeight) {
                 bestWeight = weight;
                 bestOfferId = offerId;
             }
+            console.log("Best weight=%s", bestWeight);
         }
 
         winner = offerById[bestOfferId];
@@ -103,11 +120,18 @@ contract EasyTender {
         return winner.price;
     }
 
+    function getWinnerOfferId() external view returns (bytes32 offerId) {
+        require(block.timestamp >= biddingEnd, "Bidding is still open");
+        return winner.id;
+    }
+
     // Participant flow - offering and executing contract
-    function makeOffer(bytes memory offerIpfsHash, uint256 price) external payable {
+    function makeOffer(bytes memory offerIpfsHash, uint256 price) external payable returns (bytes32 offerId) {
         require(block.timestamp < biddingEnd, "Bidding already closed");
 
-        bytes32 offerId = keccak256(abi.encode(msg.sender, offerIpfsHash));
+        console.log("Making offer: price=%s, sender=%s", price, msg.sender);
+
+        offerId = keccak256(abi.encode(msg.sender, offerIpfsHash, price));
         Offer storage offer = offerById[offerId];
         offer.id = offerId;
         offer.sender = msg.sender; 
@@ -124,9 +148,12 @@ contract EasyTender {
 
     // Researchers flow - reserching offer and voting for reward
     function voteOffer(bytes32 offerId, bool decision) external {
+        console.log("Voting with decision=%d", decision);
         Vote storage vote = voteByOfferIdBySender[msg.sender][offerId];
         require(!vote.voted, "Voter already voted");
+        console.log("Already voted flag checked");
         require(block.timestamp < biddingEnd, "Voting already closed");
+        console.log("Time checked");
         
         vote.voted = true;
         vote.decision = decision;
@@ -141,9 +168,17 @@ contract EasyTender {
             offer.weight = (offer.weight * 985)/1000;
         }
 
+        console.log("Offer acceptCount=%d, rejectCount=%d, weight=%d", offer.acceptCount, offer.rejectCount, offer.weight);
+
         address payable beneficiary = payable(msg.sender);
         beneficiary.transfer(voteReward);
 
+        console.log("Payed reward %d to voter: %s", voteReward, beneficiary);
+
         emit VoteEvent(offerId, decision);
+    }
+
+    function setBiddingEndNow() public {
+        biddingEnd = block.timestamp;
     }
 }
