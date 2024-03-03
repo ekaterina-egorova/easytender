@@ -14,17 +14,17 @@ contract EasyTenderTest {
         easyTenderTest = new EasyTender(10000, ipfsHash);
     }
 
-    //function testByPrice () public {
-    //    bytes32 offer1 = easyTenderTest.makeOffer(ipfsHash, 10000);
-    //    bytes32 offer2 = easyTenderTest.makeOffer(ipfsHash, 9000);
-    //    bytes32 offer3 = easyTenderTest.makeOffer(ipfsHash, 11000);
+    function testByPrice () public {
+        bytes32 offer1 = easyTenderTest.makeOffer(ipfsHash, 10000);
+        bytes32 offer2 = easyTenderTest.makeOffer(ipfsHash, 9000);
+        bytes32 offer3 = easyTenderTest.makeOffer(ipfsHash, 11000);
 
-    //    easyTenderTest.setBiddingEndNow();
-    //    easyTenderTest.play();
+        easyTenderTest.setBiddingEndNow();
+        easyTenderTest.play();
 
-    //    Assert.equal(easyTenderTest.getWinnerPrice(), 9000, "Lowest price offer have to win");
-    //    Assert.equal(easyTenderTest.getWinnerOfferId(), offer2, "Lowest price offer have to win");
-    //}
+        Assert.equal(easyTenderTest.getWinnerPrice(), 9000, "Lowest price offer have to win");
+        Assert.equal(easyTenderTest.getWinnerOfferId(), offer2, "Lowest price offer have to win");
+    }
 
     function testByVote () public {
         bytes32 offer1 = easyTenderTest.makeOffer(ipfsHash, 10000);
