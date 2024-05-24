@@ -9,12 +9,8 @@ contract EasyTenderTest {
 
     bytes constant ipfsHash = bytes("QmS4ustL54uo8FzR9455qaxZwuMiUhyvMcX9Ba8nUH4uVv");
     
-    EasyTender easyTenderTest;
-    function beforeAll () public {
-        easyTenderTest = new EasyTender(10000, ipfsHash);
-    }
-
     function testByPrice () public {
+        EasyTender easyTenderTest = new EasyTender(10000, ipfsHash);
         bytes32 offer1 = easyTenderTest.makeOffer(ipfsHash, 10000);
         bytes32 offer2 = easyTenderTest.makeOffer(ipfsHash, 9000);
         bytes32 offer3 = easyTenderTest.makeOffer(ipfsHash, 11000);
@@ -27,6 +23,7 @@ contract EasyTenderTest {
     }
 
     function testByVote () public {
+        EasyTender easyTenderTest = new EasyTender(10000, ipfsHash);
         bytes32 offer1 = easyTenderTest.makeOffer(ipfsHash, 10000);
         bytes32 offer2 = easyTenderTest.makeOffer(ipfsHash, 10000);
         bytes32 offer3 = easyTenderTest.makeOffer(ipfsHash, 10000);
@@ -41,6 +38,7 @@ contract EasyTenderTest {
     }
 
     function testByVote2 () public {
+        EasyTender easyTenderTest = new EasyTender(10000, ipfsHash);
         bytes32 offer1 = easyTenderTest.makeOffer(ipfsHash, 10000);
         bytes32 offer2 = easyTenderTest.makeOffer(ipfsHash, 10000);
         bytes32 offer3 = easyTenderTest.makeOffer(ipfsHash, 10000);
