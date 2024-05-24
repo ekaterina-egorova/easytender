@@ -3,8 +3,18 @@
 pragma solidity >=0.7.0 <0.9.0;
 
 import "hardhat/console.sol";
+import {Chainlink, ChainlinkClient} from "@chainlink/contracts/src/v0.8/ChainlinkClient.sol";
+import {ConfirmedOwner} from "@chainlink/contracts/src/v0.8/shared/access/ConfirmedOwner.sol";
+import {LinkTokenInterface} from "@chainlink/contracts/src/v0.8/shared/interfaces/LinkTokenInterface.sol";
 
-contract EasyTender {
+contract EasyTender is ChainlinkClient, ConfirmedOwner {
+    using Chainlink for Chainlink.Request;
+
+    bytes32 private jobId;
+    uint256 private chainlinkFee = 1; 
+
+    event RequestVolume(bytes32 indexed requestId, uint256 volume);
+
     enum OfferState { New, Rejected, Accepted }
 
     mapping(bytes32 => Offer) offerById;
@@ -56,12 +66,39 @@ contract EasyTender {
     constructor(
         uint biddingTime,
         bytes memory ipfsHash
-    ) payable {
+    ) ConfirmedOwner(msg.sender) payable {
+        _setChainlinkToken(0x779877A7B0D9E8603169DdbD7836e478b4624789);
+        _setChainlinkOracle(0x6090149792dAAeE9D1D568c9f9a6F6B46AA29eFD);
+        jobId = "7da2702f37fd48e5b1b9a5715e3509b6";
+        chainlinkFee = (1 * LINK_DIVISIBILITY) / 10; // 0,1 * 10**18 (Varies by network and job)
+
         biddingEnd = block.timestamp + biddingTime;
         tenderOwner = msg.sender;
         tenderIpfsHash = ipfsHash;
         console.log("EasyTender Contract created: owner=%s, biddingEnd=%s", tenderOwner, biddingEnd);
     }
+
+    function checkIpfsHash(bytes memory ipfsHash) public {
+        Chainlink.Request memory req = _buildChainlinkRequest(jobId, address(this), this.hashChecked.selector);
+        req._add(
+            'get',
+            string.concat('https://ipfs.io/ipfs/', string(ipfsHash))
+        );
+        _sendChainlinkRequest(req, (1 * LINK_DIVISIBILITY) / 10); 
+    }
+
+    function hashChecked(bytes32 requestId, bytes memory bytesData) public recordChainlinkFulfillment(requestId) {
+        console.log("Lets say ipfs hash is ok");
+    }
+
+    function withdrawLink() public onlyOwner {
+        LinkTokenInterface link = LinkTokenInterface(_chainlinkTokenAddress());
+        require(
+            link.transfer(msg.sender, link.balanceOf(address(this))),
+            "Unable to transfer"
+        );
+    }
+
 
     function play() external {
         console.log("Going to play");
@@ -131,6 +168,8 @@ contract EasyTender {
 
         console.log("Making offer: price=%s, sender=%s", price, msg.sender);
 
+        checkIpfsHash(offerIpfsHash);
+
         offerId = keccak256(abi.encode(msg.sender, offerIpfsHash, price));
         Offer storage offer = offerById[offerId];
         offer.id = offerId;
@@ -162,10 +201,10 @@ contract EasyTender {
 
         if (decision) {
             offer.acceptCount = offer.acceptCount + 1;
-            offer.weight = (offer.weight * 101)/100;
+            offer.weight = (offer.weight * 99)/100;
         } else {
             offer.rejectCount = offer.rejectCount + 1;
-            offer.weight = (offer.weight * 985)/1000;
+            offer.weight = (offer.weight * 1015)/1000;
         }
 
         console.log("Offer acceptCount=%d, rejectCount=%d, weight=%d", offer.acceptCount, offer.rejectCount, offer.weight);
